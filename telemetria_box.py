@@ -510,7 +510,6 @@ def simular_pacotes(qtd_linhas: int = 300, taxa_ruido: float = 0.25) -> bool:
     print(f"\n>>> RESULTADO DA SIMULAÇÃO: {'APROVADO' if ok else 'REPROVADO'}")
     return ok
 
-
 # ============================================================================
 # PONTO DE ENTRADA
 # ============================================================================
@@ -520,30 +519,31 @@ if __name__ == "__main__":
         format="%(asctime)s [%(levelname)s] %(message)s",
         datefmt="%H:%M:%S",
     )
-    
-    # Vamos instanciar o gravador para ele mandar para o InfluxDB
-    if not INFLUX_TOKEN:
-        log.error("Defina a variável de ambiente INFLUX_TOKEN antes de executar.")
-        sys.exit(1)
-        
-    gravador = GravadorInflux(INFLUX_URL, INFLUX_TOKEN, INFLUX_ORG, INFLUX_BUCKET)
-    stats: Counter = Counter()
 
-    print("\n=== MODO SIMULAÇÃO CONTÍNUA (Gerando Mock Data para o InfluxDB) ===")
-    print("Pressione Ctrl+C para encerrar.\n")
+    # Procura a ESP32 na USB
+    porta_encontrada = PORTA_SERIAL or detectar_porta_esp32()
 
-    try:
-        while True:
-            # 1. Gera um pacote válido e simula o envio pela serial
-            linha_simulada, _ = _gerar_pacote_valido()
-            
-            # 2. Processa a linha com o parser e envia para o InfluxDB em lote
-            _processar_e_gravar(linha_simulada, gravador, stats)
-            
-            # 3. Espera 100 ms (simulando a taxa de 10 Hz da telemetria real)
-            time.sleep(0.1)
-            
-    except KeyboardInterrupt:
-        log.info("Encerrando simulação (Ctrl+C)...")
-    finally:
-        gravador.fechar()
+    if porta_encontrada:
+        log.info("ESP32 encontrada na porta %s! Iniciando telemetria REAL...", porta_encontrada)
+        rodar_telemetria_real(porta_encontrada)
+    else:
+        log.warning("Nenhuma ESP32 encontrada -> MODO SIMULAÇÃO CONTÍNUA ativado.")
+        if not INFLUX_TOKEN:
+            log.error("Defina a variável de ambiente INFLUX_TOKEN antes de executar.")
+            sys.exit(1)
+
+        gravador = GravadorInflux(INFLUX_URL, INFLUX_TOKEN, INFLUX_ORG, INFLUX_BUCKET)
+        stats: Counter = Counter()
+
+        print("\n=== MODO SIMULAÇÃO CONTÍNUA (Gerando Mock Data para o InfluxDB) ===")
+        print("Pressione Ctrl+C para encerrar.\n")
+
+        try:
+            while True:
+                linha_simulada, _ = _gerar_pacote_valido()
+                _processar_e_gravar(linha_simulada, gravador, stats)
+                time.sleep(0.1)  # Simula taxa de 10 Hz
+        except KeyboardInterrupt:
+            log.info("Encerrando simulação (Ctrl+C)...")
+        finally:
+            gravador.fechar()
